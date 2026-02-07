@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"openlist/model"
+	"path"
 )
 
 // Client is the OpenList API client
@@ -75,6 +77,7 @@ func (c *Client) ListFiles(req model.ListRequest) (*model.ListData, error) {
 	if resp.Code != 200 {
 		return nil, fmt.Errorf("api error: %s", resp.Message)
 	}
+	normalizeListPaths(&resp.Data, req.Path)
 	return &resp.Data, nil
 }
 
@@ -87,6 +90,7 @@ func (c *Client) ListDirs(req model.DirsRequest) ([]model.DirInfo, error) {
 	if resp.Code != 200 {
 		return nil, fmt.Errorf("api error: %s", resp.Message)
 	}
+	normalizeDirPaths(resp.Data, req.Path)
 	return resp.Data, nil
 }
 
@@ -184,4 +188,70 @@ func (c *Client) AddOfflineDownload(req model.DownloadRequest) error {
 		return fmt.Errorf("api error: %s", resp.Message)
 	}
 	return nil
+}
+
+// PutFileStream uploads a file stream to the OpenList server.
+// The path is URL-escaped and sent via File-Path header.
+func (c *Client) PutFileStream(filePath string, content []byte) error {
+	req, err := http.NewRequest(http.MethodPut, c.BaseURL+"/api/fs/put", bytes.NewReader(content))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("File-Path", url.PathEscape(filePath))
+	if c.Token != "" {
+		req.Header.Set("Authorization", c.Token)
+	}
+
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("api request failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var parsed model.CommonResponse[interface{}]
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+	if parsed.Code != 200 {
+		return fmt.Errorf("api error: %s", parsed.Message)
+	}
+	return nil
+}
+
+func normalizeListPaths(data *model.ListData, basePath string) {
+	if data == nil {
+		return
+	}
+	base := cleanBasePath(basePath)
+	for i := range data.Content {
+		if data.Content[i].Path == "" && data.Content[i].Name != "" {
+			data.Content[i].Path = path.Join(base, data.Content[i].Name)
+		}
+	}
+}
+
+func normalizeDirPaths(items []model.DirInfo, basePath string) {
+	base := cleanBasePath(basePath)
+	for i := range items {
+		if items[i].Path == "" && items[i].Name != "" {
+			items[i].Path = path.Join(base, items[i].Name)
+		}
+	}
+}
+
+func cleanBasePath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	cp := path.Clean(p)
+	if cp == "." {
+		return "/"
+	}
+	return cp
 }

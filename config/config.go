@@ -50,6 +50,8 @@ func Load() (*Config, error) {
 	// Set up environment variables
 	viper.SetEnvPrefix("OPENLIST")
 	viper.AutomaticEnv()
+	_ = viper.BindEnv("url")
+	_ = viper.BindEnv("token")
 
 	// Set up config file
 	configDir := getConfigDir()

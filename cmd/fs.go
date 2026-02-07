@@ -96,16 +96,17 @@ func init() {
 	fsCmd.AddCommand(downloadCmd)
 }
 
-func getClient() *client.Client {
+var newClient = client.NewClient
+
+func getClient() (*client.Client, error) {
 	cfg := config.GlobalConfig
 	if cfg == nil {
-		fmt.Println("Error: Configuration not loaded")
-		os.Exit(1)
+		return nil, fmt.Errorf("configuration not loaded")
 	}
 	if cfg.Token == "" {
 		fmt.Println("Warning: No token provided. Operations might fail if auth is required.")
 	}
-	return client.NewClient(cfg.URL, cfg.Token)
+	return newClient(cfg.URL, cfg.Token), nil
 }
 
 func printJSON(v interface{}) {
@@ -121,25 +122,10 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List files in a directory",
 	Run: func(cmd *cobra.Command, args []string) {
-		path, _ := cmd.Flags().GetString("path")
-		password, _ := cmd.Flags().GetString("password")
-		refresh, _ := cmd.Flags().GetBool("refresh")
-		page, _ := cmd.Flags().GetInt("page")
-		perPage, _ := cmd.Flags().GetInt("per-page")
-
-		c := getClient()
-		resp, err := c.ListFiles(model.ListRequest{
-			Path:     path,
-			Password: password,
-			Refresh:  refresh,
-			Page:     page,
-			PerPage:  perPage,
-		})
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if err := runList(cmd); err != nil {
+			printErrorJSON(err)
 			os.Exit(1)
 		}
-		printJSON(resp)
 	},
 }
 
@@ -147,21 +133,10 @@ var dirsCmd = &cobra.Command{
 	Use:   "dirs",
 	Short: "List directory structure",
 	Run: func(cmd *cobra.Command, args []string) {
-		path, _ := cmd.Flags().GetString("path")
-		password, _ := cmd.Flags().GetString("password")
-		forceRoot, _ := cmd.Flags().GetBool("force-root")
-
-		c := getClient()
-		resp, err := c.ListDirs(model.DirsRequest{
-			Path:      path,
-			Password:  password,
-			ForceRoot: forceRoot,
-		})
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if err := runDirs(cmd); err != nil {
+			printErrorJSON(err)
 			os.Exit(1)
 		}
-		printJSON(resp)
 	},
 }
 
@@ -169,19 +144,10 @@ var getCmd = &cobra.Command{
 	Use:   "get",
 	Short: "Get file or directory info",
 	Run: func(cmd *cobra.Command, args []string) {
-		path, _ := cmd.Flags().GetString("path")
-		password, _ := cmd.Flags().GetString("password")
-
-		c := getClient()
-		resp, err := c.GetFile(model.GetRequest{
-			Path:     path,
-			Password: password,
-		})
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if err := runGet(cmd); err != nil {
+			printErrorJSON(err)
 			os.Exit(1)
 		}
-		printJSON(resp)
 	},
 }
 
@@ -189,25 +155,10 @@ var searchCmd = &cobra.Command{
 	Use:   "search",
 	Short: "Search files",
 	Run: func(cmd *cobra.Command, args []string) {
-		parent, _ := cmd.Flags().GetString("parent")
-		keywords, _ := cmd.Flags().GetString("keywords")
-		scope, _ := cmd.Flags().GetInt("scope")
-		page, _ := cmd.Flags().GetInt("page")
-		perPage, _ := cmd.Flags().GetInt("per-page")
-
-		c := getClient()
-		resp, err := c.SearchFiles(model.SearchRequest{
-			Parent:   parent,
-			Keywords: keywords,
-			Scope:    scope,
-			Page:     page,
-			PerPage:  perPage,
-		})
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if err := runSearch(cmd); err != nil {
+			printErrorJSON(err)
 			os.Exit(1)
 		}
-		printJSON(resp)
 	},
 }
 
@@ -215,17 +166,10 @@ var mkdirCmd = &cobra.Command{
 	Use:   "mkdir",
 	Short: "Create a directory",
 	Run: func(cmd *cobra.Command, args []string) {
-		path, _ := cmd.Flags().GetString("path")
-
-		c := getClient()
-		err := c.Mkdir(model.MkdirRequest{
-			Path: path,
-		})
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if err := runMkdir(cmd); err != nil {
+			printErrorJSON(err)
 			os.Exit(1)
 		}
-		fmt.Println("Directory created successfully")
 	},
 }
 
@@ -233,19 +177,10 @@ var renameCmd = &cobra.Command{
 	Use:   "rename",
 	Short: "Rename a file or directory",
 	Run: func(cmd *cobra.Command, args []string) {
-		path, _ := cmd.Flags().GetString("path")
-		name, _ := cmd.Flags().GetString("name")
-
-		c := getClient()
-		err := c.Rename(model.RenameRequest{
-			Path: path,
-			Name: name,
-		})
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if err := runRename(cmd); err != nil {
+			printErrorJSON(err)
 			os.Exit(1)
 		}
-		fmt.Println("Renamed successfully")
 	},
 }
 
@@ -253,21 +188,10 @@ var moveCmd = &cobra.Command{
 	Use:   "move",
 	Short: "Move files or directories",
 	Run: func(cmd *cobra.Command, args []string) {
-		src, _ := cmd.Flags().GetString("src")
-		dst, _ := cmd.Flags().GetString("dst")
-		names, _ := cmd.Flags().GetStringSlice("names")
-
-		c := getClient()
-		err := c.Move(model.MoveCopyRequest{
-			SrcDir: src,
-			DstDir: dst,
-			Names:  names,
-		})
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if err := runMove(cmd); err != nil {
+			printErrorJSON(err)
 			os.Exit(1)
 		}
-		fmt.Println("Moved successfully")
 	},
 }
 
@@ -275,21 +199,10 @@ var copyCmd = &cobra.Command{
 	Use:   "copy",
 	Short: "Copy files or directories",
 	Run: func(cmd *cobra.Command, args []string) {
-		src, _ := cmd.Flags().GetString("src")
-		dst, _ := cmd.Flags().GetString("dst")
-		names, _ := cmd.Flags().GetStringSlice("names")
-
-		c := getClient()
-		err := c.Copy(model.MoveCopyRequest{
-			SrcDir: src,
-			DstDir: dst,
-			Names:  names,
-		})
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if err := runCopy(cmd); err != nil {
+			printErrorJSON(err)
 			os.Exit(1)
 		}
-		fmt.Println("Copied successfully")
 	},
 }
 
@@ -297,19 +210,10 @@ var removeCmd = &cobra.Command{
 	Use:   "remove",
 	Short: "Remove files or directories",
 	Run: func(cmd *cobra.Command, args []string) {
-		dir, _ := cmd.Flags().GetString("dir")
-		names, _ := cmd.Flags().GetStringSlice("names")
-
-		c := getClient()
-		err := c.Remove(model.RemoveRequest{
-			Dir:   dir,
-			Names: names,
-		})
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if err := runRemove(cmd); err != nil {
+			printErrorJSON(err)
 			os.Exit(1)
 		}
-		fmt.Println("Removed successfully")
 	},
 }
 
@@ -317,20 +221,217 @@ var downloadCmd = &cobra.Command{
 	Use:   "download",
 	Short: "Add offline download task",
 	Run: func(cmd *cobra.Command, args []string) {
-		path, _ := cmd.Flags().GetString("path")
-		urls, _ := cmd.Flags().GetStringSlice("urls")
-		tool, _ := cmd.Flags().GetString("tool")
-
-		c := getClient()
-		err := c.AddOfflineDownload(model.DownloadRequest{
-			Path: path,
-			Urls: urls,
-			Tool: tool,
-		})
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if err := runDownload(cmd); err != nil {
+			printErrorJSON(err)
 			os.Exit(1)
 		}
-		fmt.Println("Download task added successfully")
 	},
+}
+
+func runList(cmd *cobra.Command) error {
+	path, _ := cmd.Flags().GetString("path")
+	password, _ := cmd.Flags().GetString("password")
+	refresh, _ := cmd.Flags().GetBool("refresh")
+	page, _ := cmd.Flags().GetInt("page")
+	perPage, _ := cmd.Flags().GetInt("per-page")
+
+	c, err := getClient()
+	if err != nil {
+		return err
+	}
+	resp, err := c.ListFiles(model.ListRequest{
+		Path:     path,
+		Password: password,
+		Refresh:  refresh,
+		Page:     page,
+		PerPage:  perPage,
+	})
+	if err != nil {
+		return err
+	}
+	printJSON(resp)
+	return nil
+}
+
+func runDirs(cmd *cobra.Command) error {
+	path, _ := cmd.Flags().GetString("path")
+	password, _ := cmd.Flags().GetString("password")
+	forceRoot, _ := cmd.Flags().GetBool("force-root")
+
+	c, err := getClient()
+	if err != nil {
+		return err
+	}
+	resp, err := c.ListDirs(model.DirsRequest{
+		Path:      path,
+		Password:  password,
+		ForceRoot: forceRoot,
+	})
+	if err != nil {
+		return err
+	}
+	printJSON(resp)
+	return nil
+}
+
+func runGet(cmd *cobra.Command) error {
+	path, _ := cmd.Flags().GetString("path")
+	password, _ := cmd.Flags().GetString("password")
+
+	c, err := getClient()
+	if err != nil {
+		return err
+	}
+	resp, err := c.GetFile(model.GetRequest{
+		Path:     path,
+		Password: password,
+	})
+	if err != nil {
+		return err
+	}
+	printJSON(resp)
+	return nil
+}
+
+func runSearch(cmd *cobra.Command) error {
+	parent, _ := cmd.Flags().GetString("parent")
+	keywords, _ := cmd.Flags().GetString("keywords")
+	scope, _ := cmd.Flags().GetInt("scope")
+	page, _ := cmd.Flags().GetInt("page")
+	perPage, _ := cmd.Flags().GetInt("per-page")
+
+	c, err := getClient()
+	if err != nil {
+		return err
+	}
+	resp, err := c.SearchFiles(model.SearchRequest{
+		Parent:   parent,
+		Keywords: keywords,
+		Scope:    scope,
+		Page:     page,
+		PerPage:  perPage,
+	})
+	if err != nil {
+		return err
+	}
+	printJSON(resp)
+	return nil
+}
+
+func runMkdir(cmd *cobra.Command) error {
+	path, _ := cmd.Flags().GetString("path")
+
+	c, err := getClient()
+	if err != nil {
+		return err
+	}
+	err = c.Mkdir(model.MkdirRequest{
+		Path: path,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println("Directory created successfully")
+	return nil
+}
+
+func runRename(cmd *cobra.Command) error {
+	path, _ := cmd.Flags().GetString("path")
+	name, _ := cmd.Flags().GetString("name")
+
+	c, err := getClient()
+	if err != nil {
+		return err
+	}
+	err = c.Rename(model.RenameRequest{
+		Path: path,
+		Name: name,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println("Renamed successfully")
+	return nil
+}
+
+func runMove(cmd *cobra.Command) error {
+	src, _ := cmd.Flags().GetString("src")
+	dst, _ := cmd.Flags().GetString("dst")
+	names, _ := cmd.Flags().GetStringSlice("names")
+
+	c, err := getClient()
+	if err != nil {
+		return err
+	}
+	err = c.Move(model.MoveCopyRequest{
+		SrcDir: src,
+		DstDir: dst,
+		Names:  names,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println("Moved successfully")
+	return nil
+}
+
+func runCopy(cmd *cobra.Command) error {
+	src, _ := cmd.Flags().GetString("src")
+	dst, _ := cmd.Flags().GetString("dst")
+	names, _ := cmd.Flags().GetStringSlice("names")
+
+	c, err := getClient()
+	if err != nil {
+		return err
+	}
+	err = c.Copy(model.MoveCopyRequest{
+		SrcDir: src,
+		DstDir: dst,
+		Names:  names,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println("Copied successfully")
+	return nil
+}
+
+func runRemove(cmd *cobra.Command) error {
+	dir, _ := cmd.Flags().GetString("dir")
+	names, _ := cmd.Flags().GetStringSlice("names")
+
+	c, err := getClient()
+	if err != nil {
+		return err
+	}
+	err = c.Remove(model.RemoveRequest{
+		Dir:   dir,
+		Names: names,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println("Removed successfully")
+	return nil
+}
+
+func runDownload(cmd *cobra.Command) error {
+	path, _ := cmd.Flags().GetString("path")
+	urls, _ := cmd.Flags().GetStringSlice("urls")
+	tool, _ := cmd.Flags().GetString("tool")
+
+	c, err := getClient()
+	if err != nil {
+		return err
+	}
+	err = c.AddOfflineDownload(model.DownloadRequest{
+		Path: path,
+		Urls: urls,
+		Tool: tool,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println("Download task added successfully")
+	return nil
 }
