@@ -14,6 +14,7 @@ import (
 	"openlist/cmd"
 	"openlist/config"
 
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -102,4 +103,51 @@ func resetConfigFlags() {
 	_ = cmd.ConfigSetCmd.Flags().Set("value", "")
 	cmd.ConfigGetCmd.SetArgs([]string{})
 	cmd.ConfigSetCmd.SetArgs([]string{})
+}
+
+func prepareBatchRenameCmd(t *testing.T) {
+	t.Helper()
+	resetBatchRenameFlags(t)
+	t.Cleanup(func() { resetBatchRenameFlags(t) })
+}
+
+func resetBatchRenameFlags(t *testing.T) {
+	t.Helper()
+	flags := cmd.BatchRenameCmd.Flags()
+	stringDefaults := map[string]string{
+		"dir":               "/",
+		"password":          "",
+		"case":              "",
+		"chinese":           "",
+		"page":              "1",
+		"per-page":          "0",
+		"all":               "false",
+		"refresh":           "false",
+		"include-extension": "false",
+		"dry-run":           "false",
+	}
+	for name, value := range stringDefaults {
+		flag := flags.Lookup(name)
+		if flag == nil {
+			t.Fatalf("missing batch rename flag %s", name)
+		}
+		if err := flag.Value.Set(value); err != nil {
+			t.Fatalf("reset flag %s: %v", name, err)
+		}
+		flag.Changed = false
+	}
+	for _, name := range []string{"names", "paths", "replace", "regex-replace", "insert", "delete"} {
+		flag := flags.Lookup(name)
+		if flag == nil {
+			t.Fatalf("missing batch rename flag %s", name)
+		}
+		value, ok := flag.Value.(pflag.SliceValue)
+		if !ok {
+			t.Fatalf("batch rename flag %s is not a slice value", name)
+		}
+		if err := value.Replace([]string{}); err != nil {
+			t.Fatalf("reset flag %s: %v", name, err)
+		}
+		flag.Changed = false
+	}
 }

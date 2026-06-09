@@ -16,6 +16,7 @@ var (
 	SearchCmd     = searchCmd
 	MkdirCmd      = mkdirCmd
 	RenameCmd     = renameCmd
+	BatchRenameCmd = batchRenameCmd
 	MoveCmd       = moveCmd
 	CopyCmd       = copyCmd
 	RemoveCmd     = removeCmd
@@ -33,6 +34,7 @@ func RunGet(c *cobra.Command) error                      { return runGet(c) }
 func RunSearch(c *cobra.Command) error                   { return runSearch(c) }
 func RunMkdir(c *cobra.Command) error                     { return runMkdir(c) }
 func RunRename(c *cobra.Command) error                    { return runRename(c) }
+func RunBatchRename(c *cobra.Command) error               { return runBatchRename(c) }
 func RunMove(c *cobra.Command) error                     { return runMove(c) }
 func RunCopy(c *cobra.Command) error                     { return runCopy(c) }
 func RunRemove(c *cobra.Command) error                   { return runRemove(c) }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"openlist/cmd"
@@ -302,6 +303,113 @@ func TestRenameCmdError(t *testing.T) {
 
 	if err := cmd.RunRename(cmd.RenameCmd); err == nil {
 		t.Fatalf("expected error from runRename")
+	}
+}
+
+func TestBatchRenameDryRunTransforms(t *testing.T) {
+	prepareBatchRenameCmd(t)
+
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "dir", "/media")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "names", "第01话_openlist-简体1080p→A.txt")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "replace", "openlist=agent")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "regex-replace", "_=-")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "insert", "0=新-")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "delete", "unit,arrow")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "case", "title")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "chinese", "traditional")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "dry-run", "true")
+
+	out := captureStdout(t, func() {
+		if err := cmd.RunBatchRename(cmd.BatchRenameCmd); err != nil {
+			t.Fatalf("batch rename dry-run: %v", err)
+		}
+	})
+
+	var got []cmd.BatchRenameResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected one result, got %#v", got)
+	}
+	if got[0].OldPath != "/media/第01话_openlist-简体1080p→A.txt" {
+		t.Fatalf("unexpected old path: %#v", got[0])
+	}
+	if got[0].NewName != "新-第01話-Agent-簡體1080A.txt" {
+		t.Fatalf("unexpected new name: %#v", got[0])
+	}
+	if got[0].Status != "dry_run" || !got[0].Changed {
+		t.Fatalf("unexpected dry-run status: %#v", got[0])
+	}
+}
+
+func TestBatchRenameExecutesRenameRequests(t *testing.T) {
+	prepareBatchRenameCmd(t)
+
+	var gotReqs []model.RenameRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/fs/rename" {
+			t.Fatalf("expected rename path, got %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "tok" {
+			t.Fatalf("expected Authorization %q, got %q", "tok", got)
+		}
+		var req model.RenameRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		gotReqs = append(gotReqs, req)
+		_ = json.NewEncoder(w).Encode(model.CommonResponse[interface{}]{
+			Code:    200,
+			Message: "ok",
+			Data:    map[string]interface{}{},
+		})
+	}))
+	defer srv.Close()
+	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
+	t.Cleanup(func() { config.GlobalConfig = nil })
+
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "dir", "/dir")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "names", "foo 01.txt,bar 02.txt")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "regex-replace", "\\s+0*=-")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "case", "upper")
+
+	out := captureStdout(t, func() {
+		if err := cmd.RunBatchRename(cmd.BatchRenameCmd); err != nil {
+			t.Fatalf("batch rename: %v", err)
+		}
+	})
+
+	wantReqs := []model.RenameRequest{
+		{Path: "/dir/foo 01.txt", Name: "FOO-1.txt"},
+		{Path: "/dir/bar 02.txt", Name: "BAR-2.txt"},
+	}
+	if !reflect.DeepEqual(gotReqs, wantReqs) {
+		t.Fatalf("rename requests mismatch: got %#v want %#v", gotReqs, wantReqs)
+	}
+
+	var got []cmd.BatchRenameResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if len(got) != 2 || got[0].Status != "renamed" || got[1].Status != "renamed" {
+		t.Fatalf("unexpected batch output: %#v", got)
+	}
+}
+
+func TestBatchRenameDetectsSelectedSourceCollision(t *testing.T) {
+	prepareBatchRenameCmd(t)
+
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "dir", "/dir")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "names", "a.txt,b.txt")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "replace", "a=b")
+	setFlag(t, cmd.BatchRenameCmd.Flags(), "dry-run", "true")
+
+	if err := cmd.RunBatchRename(cmd.BatchRenameCmd); err == nil {
+		t.Fatalf("expected selected source collision error")
 	}
 }
 
