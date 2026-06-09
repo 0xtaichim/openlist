@@ -27,8 +27,8 @@ func NewClient(baseURL, token string) *Client {
 	}
 }
 
-// doRequest sends an HTTP request and decodes the response
-func (c *Client) doRequest(method, endpoint string, body interface{}, result interface{}) error {
+// DoRequest sends an HTTP request and decodes the response
+func (c *Client) DoRequest(method, endpoint string, body interface{}, result interface{}) error {
 	var bodyReader io.Reader
 	if body != nil {
 		jsonBody, err := json.Marshal(body)
@@ -71,7 +71,7 @@ func (c *Client) doRequest(method, endpoint string, body interface{}, result int
 // ListFiles lists files in a directory
 func (c *Client) ListFiles(req model.ListRequest) (*model.ListData, error) {
 	var resp model.CommonResponse[model.ListData]
-	if err := c.doRequest("POST", "/api/fs/list", req, &resp); err != nil {
+	if err := c.DoRequest("POST", "/api/fs/list", req, &resp); err != nil {
 		return nil, err
 	}
 	if resp.Code != 200 {
@@ -84,7 +84,7 @@ func (c *Client) ListFiles(req model.ListRequest) (*model.ListData, error) {
 // ListDirs lists directories (tree structure)
 func (c *Client) ListDirs(req model.DirsRequest) ([]model.DirInfo, error) {
 	var resp model.CommonResponse[[]model.DirInfo]
-	if err := c.doRequest("POST", "/api/fs/dirs", req, &resp); err != nil {
+	if err := c.DoRequest("POST", "/api/fs/dirs", req, &resp); err != nil {
 		return nil, err
 	}
 	if resp.Code != 200 {
@@ -97,7 +97,7 @@ func (c *Client) ListDirs(req model.DirsRequest) ([]model.DirInfo, error) {
 // GetFile gets file or directory info
 func (c *Client) GetFile(req model.GetRequest) (*model.FileInfo, error) {
 	var resp model.CommonResponse[model.FileInfo]
-	if err := c.doRequest("POST", "/api/fs/get", req, &resp); err != nil {
+	if err := c.DoRequest("POST", "/api/fs/get", req, &resp); err != nil {
 		return nil, err
 	}
 	if resp.Code != 200 {
@@ -109,7 +109,7 @@ func (c *Client) GetFile(req model.GetRequest) (*model.FileInfo, error) {
 // SearchFiles searches for files
 func (c *Client) SearchFiles(req model.SearchRequest) (*model.SearchData, error) {
 	var resp model.CommonResponse[model.SearchData]
-	if err := c.doRequest("POST", "/api/fs/search", req, &resp); err != nil {
+	if err := c.DoRequest("POST", "/api/fs/search", req, &resp); err != nil {
 		return nil, err
 	}
 	if resp.Code != 200 {
@@ -121,7 +121,7 @@ func (c *Client) SearchFiles(req model.SearchRequest) (*model.SearchData, error)
 // Mkdir creates a new directory
 func (c *Client) Mkdir(req model.MkdirRequest) error {
 	var resp model.CommonResponse[interface{}]
-	if err := c.doRequest("POST", "/api/fs/mkdir", req, &resp); err != nil {
+	if err := c.DoRequest("POST", "/api/fs/mkdir", req, &resp); err != nil {
 		return err
 	}
 	if resp.Code != 200 {
@@ -133,7 +133,7 @@ func (c *Client) Mkdir(req model.MkdirRequest) error {
 // Rename renames a file or directory
 func (c *Client) Rename(req model.RenameRequest) error {
 	var resp model.CommonResponse[interface{}]
-	if err := c.doRequest("POST", "/api/fs/rename", req, &resp); err != nil {
+	if err := c.DoRequest("POST", "/api/fs/rename", req, &resp); err != nil {
 		return err
 	}
 	if resp.Code != 200 {
@@ -145,7 +145,7 @@ func (c *Client) Rename(req model.RenameRequest) error {
 // Move moves files or directories
 func (c *Client) Move(req model.MoveCopyRequest) error {
 	var resp model.CommonResponse[interface{}]
-	if err := c.doRequest("POST", "/api/fs/move", req, &resp); err != nil {
+	if err := c.DoRequest("POST", "/api/fs/move", req, &resp); err != nil {
 		return err
 	}
 	if resp.Code != 200 {
@@ -157,7 +157,7 @@ func (c *Client) Move(req model.MoveCopyRequest) error {
 // Copy copies files or directories
 func (c *Client) Copy(req model.MoveCopyRequest) error {
 	var resp model.CommonResponse[interface{}]
-	if err := c.doRequest("POST", "/api/fs/copy", req, &resp); err != nil {
+	if err := c.DoRequest("POST", "/api/fs/copy", req, &resp); err != nil {
 		return err
 	}
 	if resp.Code != 200 {
@@ -169,7 +169,7 @@ func (c *Client) Copy(req model.MoveCopyRequest) error {
 // Remove deletes files or directories
 func (c *Client) Remove(req model.RemoveRequest) error {
 	var resp model.CommonResponse[interface{}]
-	if err := c.doRequest("POST", "/api/fs/remove", req, &resp); err != nil {
+	if err := c.DoRequest("POST", "/api/fs/remove", req, &resp); err != nil {
 		return err
 	}
 	if resp.Code != 200 {
@@ -181,7 +181,7 @@ func (c *Client) Remove(req model.RemoveRequest) error {
 // AddOfflineDownload adds an offline download task
 func (c *Client) AddOfflineDownload(req model.DownloadRequest) error {
 	var resp model.CommonResponse[interface{}]
-	if err := c.doRequest("POST", "/api/fs/add_offline_download", req, &resp); err != nil {
+	if err := c.DoRequest("POST", "/api/fs/add_offline_download", req, &resp); err != nil {
 		return err
 	}
 	if resp.Code != 200 {

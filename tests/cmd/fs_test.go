@@ -1,71 +1,21 @@
-package cmd
+package cmd_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"reflect"
 	"testing"
 
+	"openlist/cmd"
 	"openlist/config"
 	"openlist/model"
 )
 
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	orig := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = orig })
+type badJSON struct{}
 
-	fn()
-
-	_ = w.Close()
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	_ = r.Close()
-	return buf.String()
-}
-
-func setFlag(t *testing.T, cmdFlags interface {
-	Set(string, string) error
-}, name, value string) {
-	t.Helper()
-	if err := cmdFlags.Set(name, value); err != nil {
-		t.Fatalf("set flag %s: %v", name, err)
-	}
-}
-
-func newJSONServer(t *testing.T, wantPath string, wantToken string, wantBody interface{}, resp interface{}) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("expected POST, got %s", r.Method)
-		}
-		if r.URL.Path != wantPath {
-			t.Fatalf("expected path %s, got %s", wantPath, r.URL.Path)
-		}
-		if got := r.Header.Get("Authorization"); got != wantToken {
-			t.Fatalf("expected Authorization %q, got %q", wantToken, got)
-		}
-		if wantBody != nil {
-			gotBody := reflect.New(reflect.TypeOf(wantBody)).Interface()
-			if err := json.NewDecoder(r.Body).Decode(gotBody); err != nil {
-				t.Fatalf("decode request: %v", err)
-			}
-			if !reflect.DeepEqual(reflect.ValueOf(gotBody).Elem().Interface(), wantBody) {
-				t.Fatalf("request body mismatch: %#v", gotBody)
-			}
-		}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
+func (badJSON) MarshalJSON() ([]byte, error) {
+	return nil, fmt.Errorf("marshal failed")
 }
 
 func TestListCmd(t *testing.T) {
@@ -93,13 +43,13 @@ func TestListCmd(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	setFlag(t, listCmd.Flags(), "path", "/")
-	setFlag(t, listCmd.Flags(), "password", "pw")
-	setFlag(t, listCmd.Flags(), "refresh", "true")
-	setFlag(t, listCmd.Flags(), "page", "2")
-	setFlag(t, listCmd.Flags(), "per-page", "10")
+	setFlag(t, cmd.ListCmd.Flags(), "path", "/")
+	setFlag(t, cmd.ListCmd.Flags(), "password", "pw")
+	setFlag(t, cmd.ListCmd.Flags(), "refresh", "true")
+	setFlag(t, cmd.ListCmd.Flags(), "page", "2")
+	setFlag(t, cmd.ListCmd.Flags(), "per-page", "10")
 
-	out := captureStdout(t, func() { _ = runList(listCmd) })
+	out := captureStdout(t, func() { _ = cmd.RunList(cmd.ListCmd) })
 
 	var got model.ListData
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -112,7 +62,7 @@ func TestListCmd(t *testing.T) {
 
 func TestGetClientNoConfigError(t *testing.T) {
 	config.GlobalConfig = nil
-	if _, err := getClient(); err == nil {
+	if _, err := cmd.GetClientForTest(); err == nil {
 		t.Fatalf("expected error when config is nil")
 	}
 }
@@ -122,7 +72,7 @@ func TestGetClientWarnsNoToken(t *testing.T) {
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
 	out := captureStdout(t, func() {
-		_, err := getClient()
+		_, err := cmd.GetClientForTest()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -132,14 +82,8 @@ func TestGetClientWarnsNoToken(t *testing.T) {
 	}
 }
 
-type badJSON struct{}
-
-func (badJSON) MarshalJSON() ([]byte, error) {
-	return nil, fmt.Errorf("marshal failed")
-}
-
 func TestPrintJSONError(t *testing.T) {
-	out := captureStdout(t, func() { printJSON(badJSON{}) })
+	out := captureStdout(t, func() { cmd.PrintJSONForTest(badJSON{}) })
 	if out == "" || out == "\n" {
 		t.Fatalf("expected error output from printJSON")
 	}
@@ -154,7 +98,7 @@ func TestListCmdError(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	if err := runList(listCmd); err == nil {
+	if err := cmd.RunList(cmd.ListCmd); err == nil {
 		t.Fatalf("expected error from runList")
 	}
 }
@@ -177,11 +121,11 @@ func TestDirsCmd(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	setFlag(t, dirsCmd.Flags(), "path", "/root")
-	setFlag(t, dirsCmd.Flags(), "password", "pw")
-	setFlag(t, dirsCmd.Flags(), "force-root", "true")
+	setFlag(t, cmd.DirsCmd.Flags(), "path", "/root")
+	setFlag(t, cmd.DirsCmd.Flags(), "password", "pw")
+	setFlag(t, cmd.DirsCmd.Flags(), "force-root", "true")
 
-	out := captureStdout(t, func() { _ = runDirs(dirsCmd) })
+	out := captureStdout(t, func() { _ = cmd.RunDirs(cmd.DirsCmd) })
 
 	var got []model.DirInfo
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -201,7 +145,7 @@ func TestDirsCmdError(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	if err := runDirs(dirsCmd); err == nil {
+	if err := cmd.RunDirs(cmd.DirsCmd); err == nil {
 		t.Fatalf("expected error from runDirs")
 	}
 }
@@ -222,10 +166,10 @@ func TestGetCmd(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	setFlag(t, getCmd.Flags(), "path", "/file.txt")
-	setFlag(t, getCmd.Flags(), "password", "pw")
+	setFlag(t, cmd.GetCmd.Flags(), "path", "/file.txt")
+	setFlag(t, cmd.GetCmd.Flags(), "password", "pw")
 
-	out := captureStdout(t, func() { _ = runGet(getCmd) })
+	out := captureStdout(t, func() { _ = cmd.RunGet(cmd.GetCmd) })
 
 	var got model.FileInfo
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -245,7 +189,7 @@ func TestGetCmdError(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	if err := runGet(getCmd); err == nil {
+	if err := cmd.RunGet(cmd.GetCmd); err == nil {
 		t.Fatalf("expected error from runGet")
 	}
 }
@@ -271,13 +215,13 @@ func TestSearchCmd(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	setFlag(t, searchCmd.Flags(), "parent", "/")
-	setFlag(t, searchCmd.Flags(), "keywords", "doc")
-	setFlag(t, searchCmd.Flags(), "scope", "1")
-	setFlag(t, searchCmd.Flags(), "page", "3")
-	setFlag(t, searchCmd.Flags(), "per-page", "5")
+	setFlag(t, cmd.SearchCmd.Flags(), "parent", "/")
+	setFlag(t, cmd.SearchCmd.Flags(), "keywords", "doc")
+	setFlag(t, cmd.SearchCmd.Flags(), "scope", "1")
+	setFlag(t, cmd.SearchCmd.Flags(), "page", "3")
+	setFlag(t, cmd.SearchCmd.Flags(), "per-page", "5")
 
-	out := captureStdout(t, func() { _ = runSearch(searchCmd) })
+	out := captureStdout(t, func() { _ = cmd.RunSearch(cmd.SearchCmd) })
 
 	var got model.SearchData
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -297,7 +241,7 @@ func TestSearchCmdError(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	if err := runSearch(searchCmd); err == nil {
+	if err := cmd.RunSearch(cmd.SearchCmd); err == nil {
 		t.Fatalf("expected error from runSearch")
 	}
 }
@@ -310,8 +254,8 @@ func TestMkdirCmd(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	setFlag(t, mkdirCmd.Flags(), "path", "/new")
-	out := captureStdout(t, func() { _ = runMkdir(mkdirCmd) })
+	setFlag(t, cmd.MkdirCmd.Flags(), "path", "/new")
+	out := captureStdout(t, func() { _ = cmd.RunMkdir(cmd.MkdirCmd) })
 	if out != "Directory created successfully\n" {
 		t.Fatalf("unexpected mkdir output: %q", out)
 	}
@@ -326,7 +270,7 @@ func TestMkdirCmdError(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	if err := runMkdir(mkdirCmd); err == nil {
+	if err := cmd.RunMkdir(cmd.MkdirCmd); err == nil {
 		t.Fatalf("expected error from runMkdir")
 	}
 }
@@ -339,9 +283,9 @@ func TestRenameCmd(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	setFlag(t, renameCmd.Flags(), "path", "/old")
-	setFlag(t, renameCmd.Flags(), "name", "new")
-	out := captureStdout(t, func() { _ = runRename(renameCmd) })
+	setFlag(t, cmd.RenameCmd.Flags(), "path", "/old")
+	setFlag(t, cmd.RenameCmd.Flags(), "name", "new")
+	out := captureStdout(t, func() { _ = cmd.RunRename(cmd.RenameCmd) })
 	if out != "Renamed successfully\n" {
 		t.Fatalf("unexpected rename output: %q", out)
 	}
@@ -356,7 +300,7 @@ func TestRenameCmdError(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	if err := runRename(renameCmd); err == nil {
+	if err := cmd.RunRename(cmd.RenameCmd); err == nil {
 		t.Fatalf("expected error from runRename")
 	}
 }
@@ -369,10 +313,10 @@ func TestMoveCmd(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	setFlag(t, moveCmd.Flags(), "src", "/src")
-	setFlag(t, moveCmd.Flags(), "dst", "/dst")
-	setFlag(t, moveCmd.Flags(), "names", "a.txt,b.txt")
-	out := captureStdout(t, func() { _ = runMove(moveCmd) })
+	setFlag(t, cmd.MoveCmd.Flags(), "src", "/src")
+	setFlag(t, cmd.MoveCmd.Flags(), "dst", "/dst")
+	setFlag(t, cmd.MoveCmd.Flags(), "names", "a.txt,b.txt")
+	out := captureStdout(t, func() { _ = cmd.RunMove(cmd.MoveCmd) })
 	if out != "Moved successfully\n" {
 		t.Fatalf("unexpected move output: %q", out)
 	}
@@ -387,7 +331,7 @@ func TestMoveCmdError(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	if err := runMove(moveCmd); err == nil {
+	if err := cmd.RunMove(cmd.MoveCmd); err == nil {
 		t.Fatalf("expected error from runMove")
 	}
 }
@@ -400,10 +344,10 @@ func TestCopyCmd(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	setFlag(t, copyCmd.Flags(), "src", "/src")
-	setFlag(t, copyCmd.Flags(), "dst", "/dst")
-	setFlag(t, copyCmd.Flags(), "names", "a.txt,b.txt")
-	out := captureStdout(t, func() { _ = runCopy(copyCmd) })
+	setFlag(t, cmd.CopyCmd.Flags(), "src", "/src")
+	setFlag(t, cmd.CopyCmd.Flags(), "dst", "/dst")
+	setFlag(t, cmd.CopyCmd.Flags(), "names", "a.txt,b.txt")
+	out := captureStdout(t, func() { _ = cmd.RunCopy(cmd.CopyCmd) })
 	if out != "Copied successfully\n" {
 		t.Fatalf("unexpected copy output: %q", out)
 	}
@@ -418,7 +362,7 @@ func TestCopyCmdError(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	if err := runCopy(copyCmd); err == nil {
+	if err := cmd.RunCopy(cmd.CopyCmd); err == nil {
 		t.Fatalf("expected error from runCopy")
 	}
 }
@@ -431,9 +375,9 @@ func TestRemoveCmd(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	setFlag(t, removeCmd.Flags(), "dir", "/dir")
-	setFlag(t, removeCmd.Flags(), "names", "a.txt,b.txt")
-	out := captureStdout(t, func() { _ = runRemove(removeCmd) })
+	setFlag(t, cmd.RemoveCmd.Flags(), "dir", "/dir")
+	setFlag(t, cmd.RemoveCmd.Flags(), "names", "a.txt,b.txt")
+	out := captureStdout(t, func() { _ = cmd.RunRemove(cmd.RemoveCmd) })
 	if out != "Removed successfully\n" {
 		t.Fatalf("unexpected remove output: %q", out)
 	}
@@ -448,7 +392,7 @@ func TestRemoveCmdError(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	if err := runRemove(removeCmd); err == nil {
+	if err := cmd.RunRemove(cmd.RemoveCmd); err == nil {
 		t.Fatalf("expected error from runRemove")
 	}
 }
@@ -461,10 +405,10 @@ func TestDownloadCmd(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	setFlag(t, downloadCmd.Flags(), "path", "/dl")
-	setFlag(t, downloadCmd.Flags(), "urls", "http://a,http://b")
-	setFlag(t, downloadCmd.Flags(), "tool", "aria2")
-	out := captureStdout(t, func() { _ = runDownload(downloadCmd) })
+	setFlag(t, cmd.DownloadCmd.Flags(), "path", "/dl")
+	setFlag(t, cmd.DownloadCmd.Flags(), "urls", "http://a,http://b")
+	setFlag(t, cmd.DownloadCmd.Flags(), "tool", "aria2")
+	out := captureStdout(t, func() { _ = cmd.RunDownload(cmd.DownloadCmd) })
 	if out != "Download task added successfully\n" {
 		t.Fatalf("unexpected download output: %q", out)
 	}
@@ -479,7 +423,7 @@ func TestDownloadCmdError(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	if err := runDownload(downloadCmd); err == nil {
+	if err := cmd.RunDownload(cmd.DownloadCmd); err == nil {
 		t.Fatalf("expected error from runDownload")
 	}
 }

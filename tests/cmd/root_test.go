@@ -1,42 +1,14 @@
-package cmd
+package cmd_test
 
 import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
+	"openlist/cmd"
 	"openlist/config"
-
-	"github.com/spf13/viper"
 )
-
-func resetViperAndRebind(t *testing.T) {
-	t.Helper()
-	viper.Reset()
-	if err := viper.BindPFlag("url", RootCmd.PersistentFlags().Lookup("url")); err != nil {
-		t.Fatalf("bind url flag: %v", err)
-	}
-	if err := viper.BindPFlag("token", RootCmd.PersistentFlags().Lookup("token")); err != nil {
-		t.Fatalf("bind token flag: %v", err)
-	}
-}
-
-func writeConfigFile(t *testing.T, dir, url, token string) {
-	t.Helper()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	configDir := filepath.Join(dir, config.AppName)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		t.Fatalf("mkdir config dir: %v", err)
-	}
-	content := []byte("url: " + url + "\n" + "token: " + token + "\n")
-	configPath := filepath.Join(configDir, config.ConfigFileName+"."+config.ConfigFileType)
-	if err := os.WriteFile(configPath, content, 0644); err != nil {
-		t.Fatalf("write config file: %v", err)
-	}
-}
 
 func TestRootCmdConfigFileUsed(t *testing.T) {
 	resetViperAndRebind(t)
@@ -61,8 +33,8 @@ func TestRootCmdConfigFileUsed(t *testing.T) {
 	tmp := t.TempDir()
 	writeConfigFile(t, tmp, srv.URL, "file-token")
 
-	RootCmd.SetArgs([]string{"fs", "list", "--path", "/"})
-	_, err := RootCmd.ExecuteC()
+	cmd.RootCmd.SetArgs([]string{"fs", "list", "--path", "/"})
+	_, err := cmd.RootCmd.ExecuteC()
 	if err != nil {
 		t.Fatalf("ExecuteC error: %v", err)
 	}
@@ -94,8 +66,8 @@ func TestRootCmdEnvOverridesConfig(t *testing.T) {
 	t.Setenv("OPENLIST_URL", srv.URL)
 	t.Setenv("OPENLIST_TOKEN", "env-token")
 
-	RootCmd.SetArgs([]string{"fs", "list", "--path", "/"})
-	_, err := RootCmd.ExecuteC()
+	cmd.RootCmd.SetArgs([]string{"fs", "list", "--path", "/"})
+	_, err := cmd.RootCmd.ExecuteC()
 	if err != nil {
 		t.Fatalf("ExecuteC error: %v", err)
 	}

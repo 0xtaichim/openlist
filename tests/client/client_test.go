@@ -1,4 +1,4 @@
-package client
+package client_test
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"openlist/client"
 	"openlist/model"
 )
 
@@ -52,7 +53,7 @@ func TestListFilesSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, wantToken)
+	c := client.NewClient(srv.URL, wantToken)
 	if _, err := c.ListFiles(wantReq); err != nil {
 		t.Fatalf("ListFiles error: %v", err)
 	}
@@ -65,8 +66,8 @@ func TestDoRequestStatusError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
-	if err := c.doRequest(http.MethodPost, "/api/fs/list", nil, nil); err == nil {
+	c := client.NewClient(srv.URL, "")
+	if err := c.DoRequest(http.MethodPost, "/api/fs/list", nil, nil); err == nil {
 		t.Fatalf("expected error on non-2xx status")
 	}
 }
@@ -81,7 +82,7 @@ func TestListFilesAPIErrorCode(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := client.NewClient(srv.URL, "")
 	if _, err := c.ListFiles(model.ListRequest{Path: "/"}); err == nil {
 		t.Fatalf("expected error when API code != 200")
 	}
@@ -112,7 +113,7 @@ func TestPutFileStream(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := client.NewClient(srv.URL, "")
 	if err := c.PutFileStream(wantPath, []byte(wantBody)); err != nil {
 		t.Fatalf("PutFileStream error: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestListFilesFillsEmptyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := client.NewClient(srv.URL, "")
 	resp, err := c.ListFiles(model.ListRequest{Path: "/"})
 	if err != nil {
 		t.Fatalf("ListFiles error: %v", err)
@@ -154,7 +155,7 @@ func TestListDirsFillsEmptyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := client.NewClient(srv.URL, "")
 	resp, err := c.ListDirs(model.DirsRequest{Path: "/"})
 	if err != nil {
 		t.Fatalf("ListDirs error: %v", err)

@@ -1,4 +1,4 @@
-package cmd
+package cmd_test
 
 import (
 	"encoding/json"
@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"openlist/cmd"
 	"openlist/config"
 	"openlist/model"
 )
@@ -62,15 +63,15 @@ func TestStrmRemoteToRemoteWithSign(t *testing.T) {
 	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
 	t.Cleanup(func() { config.GlobalConfig = nil })
 
-	strmCmd.Flags().Set("src", "/Movies")
-	strmCmd.Flags().Set("dst", "/STRM")
-	strmCmd.Flags().Set("dst-type", "remote")
-	strmCmd.Flags().Set("base-url", "https://example.com")
-	strmCmd.Flags().Set("recursive", "false")
-	strmCmd.Flags().Set("overwrite", "true")
-	strmCmd.Flags().Set("sign", "true")
+	cmd.StrmCmd.Flags().Set("src", "/Movies")
+	cmd.StrmCmd.Flags().Set("dst", "/STRM")
+	cmd.StrmCmd.Flags().Set("dst-type", "remote")
+	cmd.StrmCmd.Flags().Set("base-url", "https://example.com")
+	cmd.StrmCmd.Flags().Set("recursive", "false")
+	cmd.StrmCmd.Flags().Set("overwrite", "true")
+	cmd.StrmCmd.Flags().Set("sign", "true")
 
-	if err := runStrm(strmCmd); err != nil {
+	if err := cmd.RunStrm(cmd.StrmCmd); err != nil {
 		t.Fatalf("runStrm error: %v", err)
 	}
 
@@ -126,15 +127,15 @@ func TestStrmRemoteToLocal(t *testing.T) {
 
 	tmp := t.TempDir()
 
-	strmCmd.Flags().Set("src", "/Movies")
-	strmCmd.Flags().Set("dst", tmp)
-	strmCmd.Flags().Set("dst-type", "local")
-	strmCmd.Flags().Set("base-url", "https://example.com")
-	strmCmd.Flags().Set("recursive", "false")
-	strmCmd.Flags().Set("overwrite", "true")
-	strmCmd.Flags().Set("sign", "true")
+	cmd.StrmCmd.Flags().Set("src", "/Movies")
+	cmd.StrmCmd.Flags().Set("dst", tmp)
+	cmd.StrmCmd.Flags().Set("dst-type", "local")
+	cmd.StrmCmd.Flags().Set("base-url", "https://example.com")
+	cmd.StrmCmd.Flags().Set("recursive", "false")
+	cmd.StrmCmd.Flags().Set("overwrite", "true")
+	cmd.StrmCmd.Flags().Set("sign", "true")
 
-	if err := runStrm(strmCmd); err != nil {
+	if err := cmd.RunStrm(cmd.StrmCmd); err != nil {
 		t.Fatalf("runStrm error: %v", err)
 	}
 
@@ -149,7 +150,7 @@ func TestStrmRemoteToLocal(t *testing.T) {
 }
 
 func TestStrmBuildTargetPath(t *testing.T) {
-	got, err := buildTargetPath("/Movies", "/STRM", "/Movies/A/B.mkv")
+	got, err := cmd.BuildTargetPathForTest("/Movies", "/STRM", "/Movies/A/B.mkv")
 	if err != nil {
 		t.Fatalf("buildTargetPath error: %v", err)
 	}
@@ -159,7 +160,7 @@ func TestStrmBuildTargetPath(t *testing.T) {
 }
 
 func TestEncodePath(t *testing.T) {
-	got := encodePath("/A B/测试.mkv")
+	got := cmd.EncodePathForTest("/A B/测试.mkv")
 	if got != "/A%20B/%E6%B5%8B%E8%AF%95.mkv" {
 		t.Fatalf("unexpected encoded path: %q", got)
 	}

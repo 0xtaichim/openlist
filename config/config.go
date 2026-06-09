@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -72,6 +73,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	cfg.URL = normalizeURL(cfg.URL)
 	GlobalConfig = &cfg
 	return &cfg, nil
 }
@@ -124,8 +126,24 @@ func (c *Config) GetToken() string {
 	return c.Token
 }
 
-// SetURL sets the URL (does not save to file automatically)
+// normalizeURL trims trailing slashes from the URL.
+// It avoids trimming "https://" or "http://" into "https:" or "http:".
+func normalizeURL(u string) string {
+	for strings.HasSuffix(u, "/") {
+		trimmed := strings.TrimSuffix(u, "/")
+		if !strings.Contains(trimmed, "://") {
+			break
+		}
+		u = trimmed
+	}
+	return u
+}
+
+// SetURL sets the URL (does not save to file automatically).
+// Trailing slashes are trimmed to avoid request failures.
 func (c *Config) SetURL(url string) {
+	url = strings.TrimSpace(url)
+	url = normalizeURL(url)
 	c.URL = url
 	viper.Set("url", url)
 }
