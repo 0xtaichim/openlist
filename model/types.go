@@ -1,3 +1,4 @@
+// Package model defines OpenList API request and response types.
 package model
 
 import "time"

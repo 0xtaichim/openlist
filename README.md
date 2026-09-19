@@ -1,43 +1,51 @@
 # openlist
 
-A simple and efficient Go-based list management tool.
+CLI for [OpenList](https://github.com/OpenListTeam/OpenList) (AList-compatible) file servers.
 
 ## Features
-- **Project Structure**: Clean and modularized Go project design.
-- **CLI Support**: Built with command-line interactions in mind.
-- **Configurable**: Easy to manage settings through the `config` module.
 
-## Project Structure
-```text
-.
-├── client/     # Client implementation
-├── cmd/        # CLI command definitions
-├── config/     # Configuration management
-├── model/      # Data types and models
-├── main.go     # Application entry point
-└── openlist    # Compiled binary
-```
+- Manage files remotely: list, search, mkdir, rename, copy, move, remove
+- Offline download tasks
+- Generate `.strm` files (local or remote) with concurrent directory walking
+- XDG config (`~/.config/openlist/config.yaml`) plus `OPENLIST_*` env and flags
 
-## Getting Started
+## Install
 
-### Prerequisites
-- Go 1.21 or higher (recommended)
-
-### Installation
-Clone the repository:
 ```bash
 git clone git@github.com:0xtaichim/openlist.git
 cd openlist
+go build -o openlist .
 ```
 
-### Build
-To build the project from source:
+Requires Go 1.23+.
+
+## Configuration
+
+Priority (low → high): defaults → config file → environment → flags.
+
 ```bash
-go build -o openlist main.go
+openlist config set url http://localhost:5244
+openlist config set token <your-token>
+openlist config list
+```
+
+Environment:
+
+- `OPENLIST_URL`
+- `OPENLIST_TOKEN`
+- `XDG_CONFIG_HOME` (config directory root)
+
+Flags on every command: `--url` / `-u`, `--token` / `-t`.
+
+## Examples
+
+```bash
+openlist fs list --path /
+openlist fs get --path /Movies
+openlist strm --src /Movies --dst /STRM --base-url https://example.com
+openlist strm --src /Movies --dst ./strm --dst-type local --base-url https://example.com --dry-run
 ```
 
 ## License
-MIT License (or your preferred license)
 
----
-*Created with ✨ by Hikari Yagami*
+MIT

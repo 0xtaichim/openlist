@@ -1,85 +1,112 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 
+	"openlist/client"
 	"openlist/config"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
-// RootCmd represents the base command when called without any subcommands
-var RootCmd = &cobra.Command{
-	Use:   "openlist",
-	Short: "A CLI tool for OpenList",
-	Long: `OpenList CLI is a command line interface for managing files 
+// Execute runs the CLI with ctx for cancellation (SIGINT/SIGTERM).
+func Execute(ctx context.Context) error {
+	root := NewRootCmd()
+	err := root.ExecuteContext(ctx)
+	if err != nil {
+		_ = writeJSON(root.OutOrStdout(), map[string]string{"error": err.Error()})
+	}
+	return err
+}
+
+// NewRootCmd constructs the openlist command tree.
+func NewRootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:   "openlist",
+		Short: "A CLI tool for OpenList",
+		Long: `OpenList CLI is a command line interface for managing files
 and directories on your OpenList server.`,
-	SilenceErrors: true,
-	SilenceUsage:  true,
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Load configuration
-		cfg, err := config.Load()
-		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
-		}
-
-		// Override with command-line flags if explicitly set
-		if flagChanged(cmd, "url") {
-			cfg.URL = viper.GetString("url")
-		}
-		if flagChanged(cmd, "token") {
-			cfg.Token = viper.GetString("token")
-		}
-
-		config.GlobalConfig = cfg
-		return nil
-	},
-}
-
-// Execute adds all child commands to the root command and sets flags appropriately.
-func Execute() {
-	if err := RootCmd.Execute(); err != nil {
-		printErrorJSON(err)
-		os.Exit(1)
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load config: %w", err)
+			}
+			if changed, value := persistentFlag(cmd, "url"); changed {
+				cfg.SetURL(value)
+			}
+			if changed, value := persistentFlag(cmd, "token"); changed {
+				cfg.SetToken(value)
+			}
+			cmd.SetContext(config.WithContext(cmd.Context(), cfg))
+			return nil
+		},
 	}
+
+	root.PersistentFlags().StringP("url", "u", config.DefaultURL, "OpenList server URL")
+	root.PersistentFlags().StringP("token", "t", "", "OpenList API token")
+
+	root.AddCommand(newConfigCmd())
+	root.AddCommand(newFSCmd())
+	root.AddCommand(newStrmCmd())
+	return root
 }
 
-func init() {
-	// Define persistent flags
-	RootCmd.PersistentFlags().StringP("url", "u", config.DefaultURL, "OpenList server URL")
-	RootCmd.PersistentFlags().StringP("token", "t", "", "OpenList API token")
-
-	// Bind flags to viper
-	viper.BindPFlag("url", RootCmd.PersistentFlags().Lookup("url"))
-	viper.BindPFlag("token", RootCmd.PersistentFlags().Lookup("token"))
-}
-
-func printErrorJSON(err error) {
-	if err == nil {
-		return
-	}
-	payload := map[string]string{
-		"error": err.Error(),
-	}
-	printJSON(payload)
-}
-
-func flagChanged(cmd *cobra.Command, name string) bool {
+func persistentFlag(cmd *cobra.Command, name string) (bool, string) {
 	if f := cmd.Flags().Lookup(name); f != nil && f.Changed {
-		return true
+		return true, f.Value.String()
 	}
 	if f := cmd.InheritedFlags().Lookup(name); f != nil && f.Changed {
-		return true
-	}
-	if f := cmd.PersistentFlags().Lookup(name); f != nil && f.Changed {
-		return true
+		return true, f.Value.String()
 	}
 	if root := cmd.Root(); root != nil {
 		if f := root.PersistentFlags().Lookup(name); f != nil && f.Changed {
-			return true
+			return true, f.Value.String()
 		}
 	}
-	return false
+	return false, ""
+}
+
+func writeJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+func printJSON(cmd *cobra.Command, v any) error {
+	if err := writeJSON(cmd.OutOrStdout(), v); err != nil {
+		return fmt.Errorf("error marshaling response: %w", err)
+	}
+	return nil
+}
+
+func getClient(cmd *cobra.Command) (*client.Client, error) {
+	cfg := config.FromContext(cmd.Context())
+	if cfg == nil {
+		return nil, fmt.Errorf("configuration not loaded")
+	}
+	if cfg.Token == "" {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Warning: No token provided. Operations might fail if auth is required.")
+	}
+	return client.NewClient(cfg.URL, cfg.Token), nil
+}
+
+func mustGetString(cmd *cobra.Command, name string) (string, error) {
+	return cmd.Flags().GetString(name)
+}
+
+func mustGetBool(cmd *cobra.Command, name string) (bool, error) {
+	return cmd.Flags().GetBool(name)
+}
+
+func mustGetInt(cmd *cobra.Command, name string) (int, error) {
+	return cmd.Flags().GetInt(name)
+}
+
+func mustGetStringSlice(cmd *cobra.Command, name string) ([]string, error) {
+	return cmd.Flags().GetStringSlice(name)
 }
