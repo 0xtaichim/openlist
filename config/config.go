@@ -1,12 +1,14 @@
-// Package config handles OpenList CLI configuration management.
-// It follows XDG Base Directory Specification and supports:
-//   - Command line flags (highest priority)
-//   - Environment variables
-//   - Config file (~/.config/openlist/config.yaml)
-//   - Default values (lowest priority)
+// Package config handles OpenList CLI configuration.
+//
+// Lookup order (highest priority last applied by the CLI):
+//  1. Default values
+//  2. Config file ($XDG_CONFIG_HOME/openlist/config.yaml)
+//  3. Environment variables (OPENLIST_URL, OPENLIST_TOKEN)
+//  4. Command-line flags
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,118 +18,123 @@ import (
 )
 
 const (
-	// AppName is the application name for XDG directories
+	// AppName is the application name used for XDG directories.
 	AppName = "openlist"
 
-	// DefaultURL is the default OpenList server URL
+	// DefaultURL is the default OpenList server URL.
 	DefaultURL = "http://localhost:5244"
 
-	// ConfigFileName is the name of the config file
+	// ConfigFileName is the config file base name (without extension).
 	ConfigFileName = "config"
 
-	// ConfigFileType is the config file extension
+	// ConfigFileType is the config file extension.
 	ConfigFileType = "yaml"
 )
 
-// Config holds the application configuration
+type ctxKey struct{}
+
+// Config holds the application configuration.
 type Config struct {
-	URL   string `mapstructure:"url"`
-	Token string `mapstructure:"token"`
+	URL   string `mapstructure:"url" yaml:"url"`
+	Token string `mapstructure:"token" yaml:"token"`
 }
 
-// GlobalConfig is the loaded configuration instance
-var GlobalConfig *Config
-
-// Load initializes the configuration with the following priority:
-// 1. Command line flags
-// 2. Environment variables (OPENLIST_URL, OPENLIST_TOKEN)
-// 3. Config file (~/.config/openlist/config.yaml)
-// 4. Default values
+// Load reads configuration from defaults, the config file, and the environment.
+// Callers that need flag overrides should apply them afterwards.
 func Load() (*Config, error) {
-	// Set default values
-	viper.SetDefault("url", DefaultURL)
-	viper.SetDefault("token", "")
+	v := newViper()
 
-	// Set up environment variables
-	viper.SetEnvPrefix("OPENLIST")
-	viper.AutomaticEnv()
-	_ = viper.BindEnv("url")
-	_ = viper.BindEnv("token")
-
-	// Set up config file
-	configDir := getConfigDir()
-	viper.AddConfigPath(configDir)
-	viper.SetConfigName(ConfigFileName)
-	viper.SetConfigType(ConfigFileType)
-
-	// Try to read config file (ignore if not found)
-	if err := viper.ReadInConfig(); err != nil {
-		// Only return error if it's not a "config file not found" error
+	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("failed to read config file: %w", err)
 		}
 	}
 
 	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	cfg.URL = normalizeURL(cfg.URL)
-	GlobalConfig = &cfg
+	cfg.SetURL(cfg.URL)
 	return &cfg, nil
 }
 
-// GetConfigDir returns the XDG config directory for this application
-func getConfigDir() string {
-	// Check XDG_CONFIG_HOME first
+// WithContext stores cfg in ctx.
+func WithContext(ctx context.Context, cfg *Config) context.Context {
+	return context.WithValue(ctx, ctxKey{}, cfg)
+}
+
+// FromContext returns the Config stored in ctx, or nil.
+func FromContext(ctx context.Context) *Config {
+	cfg, _ := ctx.Value(ctxKey{}).(*Config)
+	return cfg
+}
+
+// Dir returns the XDG config directory for this application.
+func Dir() string {
 	if xdgConfig := os.Getenv("XDG_CONFIG_HOME"); xdgConfig != "" {
 		return filepath.Join(xdgConfig, AppName)
 	}
 
-	// Fall back to ~/.config
 	home, err := os.UserHomeDir()
 	if err != nil {
-		// Last resort: current directory
 		return "."
 	}
 	return filepath.Join(home, ".config", AppName)
 }
 
-// Save saves the current configuration to the config file
-func (c *Config) Save() error {
-	configDir := getConfigDir()
+// FilePath returns the full path of the config file.
+func FilePath() string {
+	return filepath.Join(Dir(), ConfigFileName+"."+ConfigFileType)
+}
 
-	// Create config directory if it doesn't exist
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+// Save writes the configuration to the config file with restrictive permissions.
+func (c *Config) Save() error {
+	configDir := Dir()
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Set values in viper
-	viper.Set("url", c.URL)
-	viper.Set("token", c.Token)
+	v := viper.New()
+	v.Set("url", c.URL)
+	v.Set("token", c.Token)
 
-	// Write config file
-	configPath := filepath.Join(configDir, ConfigFileName+"."+ConfigFileType)
-	if err := viper.WriteConfigAs(configPath); err != nil {
+	configPath := FilePath()
+	if err := v.WriteConfigAs(configPath); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
-
+	if err := os.Chmod(configPath, 0o600); err != nil {
+		return fmt.Errorf("failed to set config file permissions: %w", err)
+	}
 	return nil
 }
 
-// GetURL returns the configured URL
-func (c *Config) GetURL() string {
-	return c.URL
+// SetURL sets the URL after trimming space and trailing slashes.
+func (c *Config) SetURL(raw string) {
+	c.URL = normalizeURL(strings.TrimSpace(raw))
 }
 
-// GetToken returns the configured token
-func (c *Config) GetToken() string {
-	return c.Token
+// SetToken sets the API token.
+func (c *Config) SetToken(token string) {
+	c.Token = strings.TrimSpace(token)
 }
 
-// normalizeURL trims trailing slashes from the URL.
-// It avoids trimming "https://" or "http://" into "https:" or "http:".
+func newViper() *viper.Viper {
+	v := viper.New()
+	v.SetDefault("url", DefaultURL)
+	v.SetDefault("token", "")
+
+	v.SetEnvPrefix("OPENLIST")
+	_ = v.BindEnv("url")
+	_ = v.BindEnv("token")
+
+	v.AddConfigPath(Dir())
+	v.SetConfigName(ConfigFileName)
+	v.SetConfigType(ConfigFileType)
+	return v
+}
+
+// normalizeURL trims trailing slashes without turning "https://" into "https:".
 func normalizeURL(u string) string {
 	for strings.HasSuffix(u, "/") {
 		trimmed := strings.TrimSuffix(u, "/")
@@ -137,19 +144,4 @@ func normalizeURL(u string) string {
 		u = trimmed
 	}
 	return u
-}
-
-// SetURL sets the URL (does not save to file automatically).
-// Trailing slashes are trimmed to avoid request failures.
-func (c *Config) SetURL(url string) {
-	url = strings.TrimSpace(url)
-	url = normalizeURL(url)
-	c.URL = url
-	viper.Set("url", url)
-}
-
-// SetToken sets the token (does not save to file automatically)
-func (c *Config) SetToken(token string) {
-	c.Token = token
-	viper.Set("token", token)
 }

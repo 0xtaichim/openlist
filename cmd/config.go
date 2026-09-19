@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"openlist/config"
@@ -10,58 +9,45 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var configCmd = &cobra.Command{
-	Use:   "config",
-	Short: "Manage OpenList CLI configuration",
-}
+func newConfigCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "config",
+		Short: "Manage OpenList CLI configuration",
+	}
 
-var configGetCmd = &cobra.Command{
-	Use:   "get [key]",
-	Short: "Get a config value",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := runConfigGet(cmd, args); err != nil {
-			printErrorJSON(err)
-			os.Exit(1)
-		}
-	},
-}
+	getCmd := &cobra.Command{
+		Use:   "get [key]",
+		Short: "Get a config value",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runConfigGet,
+	}
+	getCmd.Flags().StringP("key", "k", "", "Config key to get (url, token)")
 
-var configSetCmd = &cobra.Command{
-	Use:   "set [key] [value]",
-	Short: "Set a config value",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := runConfigSet(cmd, args); err != nil {
-			printErrorJSON(err)
-			os.Exit(1)
-		}
-	},
-}
+	setCmd := &cobra.Command{
+		Use:   "set [key] [value]",
+		Short: "Set a config value",
+		Args:  cobra.MaximumNArgs(2),
+		RunE:  runConfigSet,
+	}
+	setCmd.Flags().StringP("key", "k", "", "Config key to set (url, token)")
+	setCmd.Flags().StringP("value", "v", "", "Value to set")
 
-var configListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all config values",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := runConfigList(); err != nil {
-			printErrorJSON(err)
-			os.Exit(1)
-		}
-	},
-}
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all config values",
+		Args:  cobra.NoArgs,
+		RunE:  runConfigList,
+	}
 
-func init() {
-	configGetCmd.Flags().StringP("key", "k", "", "Config key to get (url, token)")
-
-	configSetCmd.Flags().StringP("key", "k", "", "Config key to set (url, token)")
-	configSetCmd.Flags().StringP("value", "v", "", "Value to set")
-
-	configCmd.AddCommand(configGetCmd)
-	configCmd.AddCommand(configSetCmd)
-	configCmd.AddCommand(configListCmd)
-	RootCmd.AddCommand(configCmd)
+	cmd.AddCommand(getCmd, setCmd, listCmd)
+	return cmd
 }
 
 func runConfigGet(cmd *cobra.Command, args []string) error {
-	key, _ := cmd.Flags().GetString("key")
+	key, err := cmd.Flags().GetString("key")
+	if err != nil {
+		return err
+	}
 	if key == "" {
 		if len(args) >= 1 {
 			key = args[0]
@@ -71,20 +57,22 @@ func runConfigGet(cmd *cobra.Command, args []string) error {
 	}
 	key = strings.ToLower(strings.TrimSpace(key))
 
-	cfg, err := config.Load()
-	if err != nil {
-		return err
+	cfg := config.FromContext(cmd.Context())
+	if cfg == nil {
+		cfg, err = config.Load()
+		if err != nil {
+			return err
+		}
 	}
 
 	switch key {
 	case "url":
-		printJSON(map[string]string{"url": cfg.URL})
+		return printJSON(cmd, map[string]string{"url": cfg.URL})
 	case "token":
-		printJSON(map[string]string{"token": cfg.Token})
+		return printJSON(cmd, map[string]string{"token": cfg.Token})
 	default:
 		return fmt.Errorf("unknown key: %s", key)
 	}
-	return nil
 }
 
 func runConfigSet(cmd *cobra.Command, args []string) error {
@@ -101,6 +89,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	}
 	key = strings.ToLower(strings.TrimSpace(key))
 
+	// Load from disk/env so flag overrides on the root command are not persisted.
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -118,18 +107,20 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	if err := cfg.Save(); err != nil {
 		return err
 	}
-	printJSON(map[string]string{"message": "ok"})
-	return nil
+	return printJSON(cmd, map[string]string{"message": "ok"})
 }
 
-func runConfigList() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
+func runConfigList(cmd *cobra.Command, args []string) error {
+	cfg := config.FromContext(cmd.Context())
+	if cfg == nil {
+		var err error
+		cfg, err = config.Load()
+		if err != nil {
+			return err
+		}
 	}
-	printJSON(map[string]string{
+	return printJSON(cmd, map[string]string{
 		"url":   cfg.URL,
 		"token": cfg.Token,
 	})
-	return nil
 }

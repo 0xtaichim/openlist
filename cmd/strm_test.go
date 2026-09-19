@@ -4,15 +4,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"openlist/cmd"
-	"openlist/config"
 	"openlist/model"
 )
 
@@ -20,7 +18,7 @@ func TestStrmRemoteToRemoteWithSign(t *testing.T) {
 	var gotPutPath string
 	var gotPutBody string
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withServer(t, "tok", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/fs/list":
 			var req model.ListRequest
@@ -49,49 +47,39 @@ func TestStrmRemoteToRemoteWithSign(t *testing.T) {
 			gotPutPath = r.Header.Get("File-Path")
 			body, _ := io.ReadAll(r.Body)
 			gotPutBody = string(body)
-			_ = json.NewEncoder(w).Encode(model.CommonResponse[interface{}]{
+			_ = json.NewEncoder(w).Encode(model.CommonResponse[any]{
 				Code:    200,
 				Message: "ok",
-				Data:    map[string]interface{}{},
+				Data:    map[string]any{},
 			})
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-	}))
-	defer srv.Close()
+	})
 
-	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
-	t.Cleanup(func() { config.GlobalConfig = nil })
-
-	cmd.StrmCmd.Flags().Set("src", "/Movies")
-	cmd.StrmCmd.Flags().Set("dst", "/STRM")
-	cmd.StrmCmd.Flags().Set("dst-type", "remote")
-	cmd.StrmCmd.Flags().Set("base-url", "https://example.com")
-	cmd.StrmCmd.Flags().Set("recursive", "false")
-	cmd.StrmCmd.Flags().Set("overwrite", "true")
-	cmd.StrmCmd.Flags().Set("sign", "true")
-
-	if err := cmd.RunStrm(cmd.StrmCmd); err != nil {
-		t.Fatalf("runStrm error: %v", err)
-	}
-
-	expectedPath := "/STRM/movie.strm"
-	if gotPutPath == "" {
-		t.Fatalf("expected File-Path header")
-	}
-	if gotPutBody == "" {
-		t.Fatalf("expected body")
-	}
-	if gotPutPath != url.PathEscape(expectedPath) {
+	out, _, err := execCLI(t, "strm",
+		"--src", "/Movies",
+		"--dst", "/STRM",
+		"--dst-type", "remote",
+		"--base-url", "https://example.com",
+		"--recursive=false",
+		"--overwrite",
+		"--sign",
+	)
+	mustOK(t, err)
+	if gotPutPath != url.PathEscape("/STRM/movie.strm") {
 		t.Fatalf("unexpected File-Path header: %q", gotPutPath)
 	}
 	if gotPutBody != "https://example.com/d/Movies/movie.mkv?sign=signed\n" {
 		t.Fatalf("unexpected body: %q", gotPutBody)
 	}
+	if !strings.Contains(out, "Generated 1 .strm files") {
+		t.Fatalf("summary output: %q", out)
+	}
 }
 
 func TestStrmRemoteToLocal(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withServer(t, "tok", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/fs/list":
 			var req model.ListRequest
@@ -119,28 +107,21 @@ func TestStrmRemoteToLocal(t *testing.T) {
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-	}))
-	defer srv.Close()
-
-	config.GlobalConfig = &config.Config{URL: srv.URL, Token: "tok"}
-	t.Cleanup(func() { config.GlobalConfig = nil })
+	})
 
 	tmp := t.TempDir()
+	_, _, err := execCLI(t, "strm",
+		"--src", "/Movies",
+		"--dst", tmp,
+		"--dst-type", "local",
+		"--base-url", "https://example.com",
+		"--recursive=false",
+		"--overwrite",
+		"--sign",
+	)
+	mustOK(t, err)
 
-	cmd.StrmCmd.Flags().Set("src", "/Movies")
-	cmd.StrmCmd.Flags().Set("dst", tmp)
-	cmd.StrmCmd.Flags().Set("dst-type", "local")
-	cmd.StrmCmd.Flags().Set("base-url", "https://example.com")
-	cmd.StrmCmd.Flags().Set("recursive", "false")
-	cmd.StrmCmd.Flags().Set("overwrite", "true")
-	cmd.StrmCmd.Flags().Set("sign", "true")
-
-	if err := cmd.RunStrm(cmd.StrmCmd); err != nil {
-		t.Fatalf("runStrm error: %v", err)
-	}
-
-	expectedPath := filepath.Join(tmp, "movie.strm")
-	data, err := os.ReadFile(expectedPath)
+	data, err := os.ReadFile(filepath.Join(tmp, "movie.strm"))
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}
@@ -149,19 +130,44 @@ func TestStrmRemoteToLocal(t *testing.T) {
 	}
 }
 
-func TestStrmBuildTargetPath(t *testing.T) {
-	got, err := cmd.BuildTargetPathForTest("/Movies", "/STRM", "/Movies/A/B.mkv")
-	if err != nil {
-		t.Fatalf("buildTargetPath error: %v", err)
-	}
-	if got != "/STRM/A/B.strm" {
-		t.Fatalf("unexpected target path: %q", got)
+func TestStrmInvalidDestType(t *testing.T) {
+	isolateConfig(t)
+	t.Setenv("OPENLIST_URL", "http://example")
+	t.Setenv("OPENLIST_TOKEN", "tok")
+	if _, _, err := execCLI(t, "strm",
+		"--src", "/Movies",
+		"--dst", "/STRM",
+		"--dst-type", "disk",
+		"--base-url", "https://example.com",
+	); err == nil {
+		t.Fatalf("expected invalid dst-type error")
 	}
 }
 
-func TestEncodePath(t *testing.T) {
-	got := cmd.EncodePathForTest("/A B/测试.mkv")
-	if got != "/A%20B/%E6%B5%8B%E8%AF%95.mkv" {
-		t.Fatalf("unexpected encoded path: %q", got)
+func TestStrmDryRun(t *testing.T) {
+	withServer(t, "tok", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/fs/list" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(model.CommonResponse[model.ListData]{
+			Code: 200,
+			Data: model.ListData{
+				Content: []model.FileInfo{
+					{Path: "/Movies/movie.mkv", Name: "movie.mkv"},
+				},
+			},
+		})
+	})
+
+	out, _, err := execCLI(t, "strm",
+		"--src", "/Movies",
+		"--dst", "/STRM",
+		"--base-url", "https://example.com",
+		"--recursive=false",
+		"--dry-run",
+	)
+	mustOK(t, err)
+	if !strings.Contains(out, "[dry-run]") || !strings.Contains(out, "/Movies/movie.mkv") {
+		t.Fatalf("dry-run output: %q", out)
 	}
 }
